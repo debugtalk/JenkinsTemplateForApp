@@ -2,8 +2,8 @@
 
 Jenkins job overview:
 
-![](images/Jenkins_Job_Overview.png)
+![](images/Jenkins_Job_Overview.jpg)
 
 Jenkins job build overview:
 
-![](images/Jenkins_Job_Build_View.png)
+![](images/Jenkins_Job_Build_View.jpg)
