@@ -6,8 +6,10 @@ import subprocess
 import requests
 import time
 import shutil
+import re
 from datetime import datetime
 from optparse import OptionParser
+from datetime import datetime
 
 #configuration for iOS build setting
 BUILD_METHOND = "xctool" # "xcodebuild"
@@ -40,16 +42,18 @@ class BuildIPA(object):
             pass
         finally:
             os.makedirs(self.output_folder)
-        print "Install pod dependencies ============="
-        cmd_shell = 'pod install --no-repo-update'
-        self.runShell(cmd_shell)
         print "Update pod dependencies ============="
-        cmd_shell = 'pod update --no-repo-update'
+        cmd_shell = 'pod repo update'
+        self.runShell(cmd_shell)
+        print "Install pod dependencies ============="
+        cmd_shell = 'pod install'
         self.runShell(cmd_shell)
 
     def runShell(self, cmd_shell):
         process = subprocess.Popen(cmd_shell, shell = True)
         process.wait()
+        return_code = process.returncode
+        assert return_code == 0
 
     def getBuildParams(self, project, target, workspace, scheme):
         if project is None and workspace is None:
@@ -97,6 +101,8 @@ class BuildIPA(object):
         self.exportIPA()
 
     def getBuildProducts(self):
+        if not os.path.isfile(self._ipa_path):
+            raise "Failed to create ipa file!"
         app_path = os.path.join(self._archive_path, "Products", "Applications", "{0}.app".format(self._app_name))
         build_products = {
             'ipa_path': self._ipa_path,
@@ -111,8 +117,16 @@ def parseUploadResult(jsonResult):
     if resultCode == 0:
         print "Upload Success"
         appKey = jsonResult['data']['appKey']
-        print "appDownloadPage: http://www.pgyer.com/%s" % appKey
-        appQRCodeURL = jsonResult['data']['appQRCodeURL']
+        appDownloadPageURL = "http://www.pgyer.com/%s" % appKey
+        print "appDownloadPage: %s" % appDownloadPageURL
+        response = requests.get(appDownloadPageURL)
+        if response.status_code != 200:
+            raise
+        regex = '<img src=\"(.*?)\" style='
+        m = re.search(regex, response.content)
+        if m is None:
+            raise
+        appQRCodeURL = m.group(1)
         return appQRCodeURL
     else:
         print "Upload Fail!"
@@ -137,10 +151,11 @@ def uploadIpaToPgyer(ipaPath, updateDescription):
         'isPublishToPublic': '2', # 不发布到广场
         'updateDescription': updateDescription  # 版本更新描述
     }
+    r = None
     try_times = 0
-    while try_times < 3:
+    while try_times < 5:
         try:
-            print "uploading ..."
+            print "uploading ... %s" % datetime.now()
             ipa_file = {'file': open(ipaPath, 'rb')}
             r = requests.post(PGYER_UPLOAD_URL,
                 headers = headers,
@@ -150,15 +165,15 @@ def uploadIpaToPgyer(ipaPath, updateDescription):
             break
         except requests.exceptions.ConnectionError:
             print "requests.exceptions.ConnectionError occured!"
-            time.sleep(5)
-            print "try again ..."
+            time.sleep(60)
+            print "try again ... %s" % datetime.now()
             try_times += 1
         except Exception as e:
             print "Exception occured: %s" % str(e)
-            time.sleep(5)
-            print "try again ..."
+            time.sleep(60)
+            print "try again ... %s" % datetime.now()
             try_times += 1
-    if r.status_code == requests.codes.ok:
+    if r is not None and r.status_code == requests.codes.ok:
          result = r.json()
          appQRCodeURL = parseUploadResult(result)
          output_folder = os.path.dirname(ipaPath)
