@@ -1,4 +1,3 @@
-#!/usr/bin/python
 #coding=utf-8
 
 import os
@@ -10,6 +9,7 @@ import re
 from datetime import datetime
 from optparse import OptionParser
 from datetime import datetime
+import plistlib
 
 #configuration for iOS build setting
 BUILD_METHOND = "xctool" # "xcodebuild"
@@ -26,15 +26,19 @@ PGYER_UPLOAD_URL = "https://www.pgyer.com/apiv1/app/upload"
 class BuildIPA(object):
     """docstring for BuildIPA"""
     def __init__(self, project=None, target=None, workspace=None, scheme=None, configuration=None, \
-                provisioning_profile=None, output_folder=None, build_method='xctool'):
+                provisioning_profile=None, output_folder=None, \
+                plist_path=None, build_version=None, build_method='xctool'):
         super(BuildIPA, self).__init__()
         self.build_method = build_method
         self.configuration = configuration
         self.provisioning_profile = provisioning_profile
         self.output_folder = output_folder
+        self.plist_path = plist_path
+        self.build_version = build_version
         self.build_params = self.getBuildParams(project, target, workspace, scheme)
 
     def prepare(self):
+        self.changeBuildVersion()
         print "Output folder for ipa ============== %s" % self.output_folder
         try:
             shutil.rmtree(self.output_folder)
@@ -48,6 +52,14 @@ class BuildIPA(object):
         print "Install pod dependencies ============="
         cmd_shell = 'pod install'
         self.runShell(cmd_shell)
+
+    def changeBuildVersion(self):
+        build_version_list = self.build_version.split('.')
+        CFBundleShortVersionString = '.'.join(build_version_list[:3])
+        p = plistlib.readPlist(self.plist_path)
+        p['CFBundleShortVersionString'] = CFBundleShortVersionString.rstrip('.0')
+        p['CFBundleVersion'] = self.build_version
+        plistlib.writePlist(p, self.plist_path)
 
     def runShell(self, cmd_shell):
         process = subprocess.Popen(cmd_shell, shell = True)
@@ -114,24 +126,34 @@ class BuildIPA(object):
 def parseUploadResult(jsonResult):
     print 'post response: %s' % jsonResult
     resultCode = jsonResult['code']
-    if resultCode == 0:
-        print "Upload Success"
-        appKey = jsonResult['data']['appKey']
-        appDownloadPageURL = "http://www.pgyer.com/%s" % appKey
-        print "appDownloadPage: %s" % appDownloadPageURL
-        response = requests.get(appDownloadPageURL)
-        if response.status_code != 200:
-            raise
-        regex = '<img src=\"(.*?)\" style='
-        m = re.search(regex, response.content)
-        if m is None:
-            raise
-        appQRCodeURL = m.group(1)
-        return appQRCodeURL
-    else:
+
+    if resultCode != 0:
         print "Upload Fail!"
-        print "Reason: %s" % jsonResult['message']
-        raise
+        raise "Reason: %s" % jsonResult['message']
+
+    print "Upload Success"
+    appKey = jsonResult['data']['appKey']
+    appDownloadPageURL = "http://www.pgyer.com/%s" % appKey
+    print "appDownloadPage: %s" % appDownloadPageURL
+
+    try_times = 0
+    while try_times < 3:
+        try:
+            response = requests.get(appDownloadPageURL)
+            assert response.status_code == 200
+            regex = '<img src=\"(.*?)\" style='
+            m = re.search(regex, response.content)
+            assert m is not None
+            appQRCodeURL = m.group(1)
+            break
+        except AssertionError:
+            try_times += 1
+            print "QRCode image not found in download page! retry ... %s" % try_times
+
+        if try_times >= 3:
+            raise "Failed to locate QRCode image in download page, retried 3 times."
+
+    return appQRCodeURL
 
 def downloadQRCodeImage(appQRCodeURL, saveFolder):
     qr_image_file_path = os.path.join(saveFolder, 'QRCode.png')
@@ -151,7 +173,7 @@ def uploadIpaToPgyer(ipaPath, updateDescription):
         'isPublishToPublic': '2', # 不发布到广场
         'updateDescription': updateDescription  # 版本更新描述
     }
-    r = None
+
     try_times = 0
     while try_times < 5:
         try:
@@ -173,7 +195,11 @@ def uploadIpaToPgyer(ipaPath, updateDescription):
             time.sleep(60)
             print "try again ... %s" % datetime.now()
             try_times += 1
-    if r is not None and r.status_code == requests.codes.ok:
+
+        if try_times >= 5:
+            raise "Failed to upload ipa to Pgyer, retried 5 times."
+
+    if r.status_code == requests.codes.ok:
          result = r.json()
          appQRCodeURL = parseUploadResult(result)
          output_folder = os.path.dirname(ipaPath)
@@ -187,6 +213,8 @@ def main():
     parser.add_option("-p", "--project", help="Build the project name.xcodeproj.", metavar="name.xcodeproj")
     parser.add_option("-s", "--scheme", default = 'StoreCI', help="Build the scheme specified by schemename. Required if building a workspace.", metavar="schemename")
     parser.add_option("-t", "--target", help="Build the target specified by targetname. Required if building a project.", metavar="targetname")
+    parser.add_option("-v", "--build_version", default = '2.6.0.1', help="Specify build version number.", metavar="build_version")
+    parser.add_option("-l", "--plist_path", help="Specify build plist path.", metavar="plist_path")
     parser.add_option("-c", "--configuration", default = 'Release', help="Specify build configuration. Default value is Release.", metavar="configuration")
     parser.add_option("-o", "--output", default = 'BuildProducts', help="specify output filename", metavar="output_filename")
     parser.add_option("-d", "--update_description", default = '', help="specify update description", metavar="update_description")
@@ -198,13 +226,21 @@ def main():
     workspace = options.workspace
     target = options.target
     scheme = options.scheme
+    plist_path = options.plist_path
+    build_version = options.build_version
     configuration = options.configuration
     output = options.output
     update_description = options.update_description
 
+    if plist_path is None:
+        plist_file_name = '%s-Info.plist' % scheme
+        plist_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, plist_file_name))
+
     build_ipa = BuildIPA(
         workspace = workspace,
         scheme = scheme,
+        plist_path = plist_path,
+        build_version = build_version,
         configuration = configuration,
         provisioning_profile = PROVISIONING_PROFILE,
         output_folder = output,
