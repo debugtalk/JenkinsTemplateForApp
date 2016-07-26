@@ -133,7 +133,7 @@ def parseUploadResult(jsonResult):
 
     print "Upload Success"
     appKey = jsonResult['data']['appKey']
-    appDownloadPageURL = "http://www.pgyer.com/%s" % appKey
+    appDownloadPageURL = "https://www.pgyer.com/%s" % appKey
     print "appDownloadPage: %s" % appDownloadPageURL
     return appDownloadPageURL
 
