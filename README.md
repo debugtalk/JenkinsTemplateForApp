@@ -45,5 +45,5 @@ $ nohup java -jar jenkins_located_path/jenkins.war &
 ## Read More ...
 
 - [《使用Jenkins搭建iOS/Android持续集成打包平台》](http://debugtalk.com/post/iOS-Android-Packing-with-Jenkins)
-- 《关于持续集成打包平台的Jenkins配置和构建脚本实现细节》
+- [《关于持续集成打包平台的Jenkins配置和构建脚本实现细节》](http://debugtalk.com/post/iOS-Android-Packing-with-Jenkins-details)
 - 微信公众号：[DebugTalk](http://debugtalk.com/assets/images/wechat_qrcode.png)
