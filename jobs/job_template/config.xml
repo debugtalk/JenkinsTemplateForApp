@@ -33,7 +33,7 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/DJISZ/Store_iOS</url>
+        <url>https://github.com/debugtalk/XXXX</url>
         <credentialsId>483f9c64-3560-4977-a0a7-71509f718fd4</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
