@@ -14,18 +14,21 @@
 **1，添加构建脚本；**
 
 - 在构建脚本中配置`PROVISIONING_PROFILE`和`pgyer/fir.im`账号；
-- 在目标构建代码库中，创建`Build_scripts`文件夹，并将`build.py`拷贝到`Build_scripts`中；
-- 将`Build_scripts/build.py`提交到项目中。
+- 将`build_scripts`文件夹及其文件拷贝至目标构建代码库的根目录下；
+- 将`build_scripts`提交到项目的仓库中。
 
 除了与Jenkins实现持续集成，构建脚本还可单独使用，使用方式如下：
 
 ```bash
-$ python ${WORKSPACE}/Build_scripts/build.py \
-	--scheme ${SCHEME} \
+$ python ${WORKSPACE}/build_scripts/build.py \
+    --scheme ${SCHEME} \
     --workspace ${WORKSPACE}/Store.xcworkspace \
+    --sdk ${SDK}
     --configuration ${CONFIGURATION} \
     --output ${WORKSPACE}/${OUTPUT_FOLDER}
 ```
+
+需要特别说明的是，若要构建生成可在移动设备中运行的`.ipa`文件，则要将`${SDK}`设置为`iphoneos`；若要构建生成可在模拟器中运行的`.app`文件，则要将`${SDK}`设置为`iphonesimulator`。
 
 **2、运行jenkins，安装必备插件；**
 
