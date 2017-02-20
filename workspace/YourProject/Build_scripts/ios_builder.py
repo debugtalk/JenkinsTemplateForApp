@@ -1,6 +1,5 @@
-#!/usr/bin/python
 #coding=utf-8
-
+from __future__ import print_function
 import os
 import subprocess
 import shutil
@@ -8,113 +7,141 @@ import plistlib
 
 class iOSBuilder(object):
     """docstring for iOSBuilder"""
-    def __init__(self, build_method=None, workspace=None, scheme=None, project=None, target=None, \
-                sdk=None, configuration=None, provisioning_profile=None, output_folder=None, \
-                plist_path=None, build_version=None):
-        super(iOSBuilder, self).__init__()
-        self.build_method = build_method
-        self.sdk = sdk
-        self.configuration = configuration
-        self.provisioning_profile = provisioning_profile
-        self.output_folder = output_folder
-        self.plist_path = plist_path
-        self.build_version = build_version
-        self.build_params = self.getBuildParams(project, target, workspace, scheme)
+    def __init__(self, options):
+        self._build_method = options.build_method
+        self._sdk = options.sdk
+        self._configuration = options.configuration
+        self._provisioning_profile = options.provisioning_profile
+        self._output_folder = options.output_folder
+        self._plist_path = options.plist_path
+        self._build_version = options.build_version
+        self._archive_path = None
+        self._build_params = self._get_build_params(
+            options.project, options.target, options.workspace, options.scheme)
+        self._prepare()
 
-    def prepare(self):
-        self.changeBuildVersion()
-        print "Output folder for ipa ============== %s" % self.output_folder
+    def _prepare(self):
+        """ get prepared for building.
+        """
+        self._change_build_version()
+
+        print("Output folder for ipa ============== {}".format(self._output_folder))
         try:
-            shutil.rmtree(self.output_folder)
+            shutil.rmtree(self._output_folder)
         except OSError:
             pass
         finally:
-            os.makedirs(self.output_folder)
-        print "Update pod dependencies ============="
-        cmd_shell = 'pod repo update'
-        self.runShell(cmd_shell)
-        print "Install pod dependencies ============="
-        cmd_shell = 'pod install'
-        self.runShell(cmd_shell)
+            os.makedirs(self._output_folder)
 
-    def changeBuildVersion(self):
-        build_version_list = self.build_version.split('.')
-        CFBundleShortVersionString = '.'.join(build_version_list[:3])
-        p = plistlib.readPlist(self.plist_path)
-        p['CFBundleShortVersionString'] = CFBundleShortVersionString.rstrip('.0')
-        p['CFBundleVersion'] = self.build_version
-        plistlib.writePlist(p, self.plist_path)
+        self._udpate_pod_dependencies()
+        self._build_clean()
 
-    def runShell(self, cmd_shell):
-        process = subprocess.Popen(cmd_shell, shell = True)
+    def _udpate_pod_dependencies(self):
+        podfile = os.path.join(os.getcwd(), 'Podfile')
+        podfile_lock = os.path.join(os.getcwd(), 'Podfile.lock')
+        if os.path.isfile(podfile) or os.path.isfile(podfile_lock):
+            print("Update pod dependencies =============")
+            cmd_shell = 'pod repo update'
+            self._run_shell(cmd_shell)
+            print("Install pod dependencies =============")
+            cmd_shell = 'pod install'
+            self._run_shell(cmd_shell)
+
+    def _change_build_version(self):
+        """ set CFBundleVersion and CFBundleShortVersionString.
+        """
+        build_version_list = self._build_version.split('.')
+        cf_bundle_short_version_string = '.'.join(build_version_list[:3])
+        with open(self._plist_path, 'rb') as fp:
+            plist_content = plistlib.load(fp)
+            plist_content['CFBundleShortVersionString'] = cf_bundle_short_version_string
+            plist_content['CFBundleVersion'] = self._build_version
+        with open(self._plist_path, 'wb') as fp:
+            plistlib.dump(plist_content, fp)
+
+    def _run_shell(self, cmd_shell):
+        process = subprocess.Popen(cmd_shell, shell=True)
         process.wait()
         return_code = process.returncode
         assert return_code == 0
 
-    def getBuildParams(self, project, target, workspace, scheme):
+    def _get_build_params(self, project, target, workspace, scheme):
         if project is None and workspace is None:
-            exit(1)
+            raise "project and workspace should not both be None."
         elif project is not None:
-            build_params = '-project %s -target %s' % (project, target)
+            build_params = '-project %s -scheme %s' % (project, scheme)
             # specify package name
-            self._package_name = "{0}_{1}".format(target, self.configuration)
-            self._app_name = target
+            self._package_name = "{0}_{1}".format(scheme, self._configuration)
+            self._app_name = scheme
         elif workspace is not None:
             build_params = '-workspace %s -scheme %s' % (workspace, scheme)
             # specify package name
-            self._package_name = "{0}_{1}".format(scheme, self.configuration)
+            self._package_name = "{0}_{1}".format(scheme, self._configuration)
             self._app_name = scheme
 
-        build_params += ' -sdk %s -configuration %s' % (self.sdk, self.configuration)
+        build_params += ' -sdk %s -configuration %s' % (self._sdk, self._configuration)
         return build_params
 
-    def buildClean(self):
-        cmd_shell = '{0} {1} clean'.format(self.build_method, self.build_params)
-        print "buildClean============= {0}".format(cmd_shell)
-        self.runShell(cmd_shell)
+    def _build_clean(self):
+        cmd_shell = '{0} {1} clean'.format(self._build_method, self._build_params)
+        print("build clean ============= {}".format(cmd_shell))
+        self._run_shell(cmd_shell)
 
-    def buildArchive(self):
-        # specify output xcarchive location
-        self._archive_path = "{0}/{1}.xcarchive".format(self.output_folder, self._package_name)
-        cmd_shell = '{0} {1} archive -archivePath {2}'.format(self.build_method, self.build_params, self._archive_path)
-        print "buildArchive============= {0}".format(cmd_shell)
-        self.runShell(cmd_shell)
+    def _build_archive(self):
+        """ specify output xcarchive location
+        """
+        self._archive_path = os.path.join(
+            self._output_folder, "{}.xcarchive".format(self._package_name))
+        cmd_shell = '{0} {1} archive -archivePath {2}'.format(
+            self._build_method, self._build_params, self._archive_path)
+        print("build archive ============= {}".format(cmd_shell))
+        self._run_shell(cmd_shell)
 
-    def exportIPA(self):
-        # specify output ipa location
-        ipa_path = "{0}/{1}.ipa".format(self.output_folder, self._package_name)
-        cmd_shell = 'xcodebuild -exportArchive -archivePath {0}'.format(self._archive_path)
-        cmd_shell += ' -exportPath {0}'.format(ipa_path)
+    def _export_ipa(self):
+        """ export archive to ipa file, return ipa location
+        """
+        if self._provisioning_profile is None:
+            raise "provisioning profile should not be None!"
+        ipa_path = os.path.join(self._output_folder, "{}.ipa".format(self._package_name))
+        cmd_shell = 'xcodebuild -exportArchive -archivePath {}'.format(self._archive_path)
+        cmd_shell += ' -exportPath {}'.format(ipa_path)
         cmd_shell += ' -exportFormat ipa'
-        cmd_shell += ' -exportProvisioningProfile "{0}"'.format(self.provisioning_profile)
-        print "buildArchive============= {0}".format(cmd_shell)
-        self.runShell(cmd_shell)
+        cmd_shell += ' -exportProvisioningProfile "{}"'.format(self._provisioning_profile)
+        print("build archive ============= {}".format(cmd_shell))
+        self._run_shell(cmd_shell)
         return ipa_path
 
     def build_ipa(self):
-        self.prepare()
-        self.buildClean()
-        self.buildArchive()
-        ipa_path = self.exportIPA()
+        """ build ipa file for iOS device
+        """
+        self._build_archive()
+        ipa_path = self._export_ipa()
         return ipa_path
 
-    def buildArchiveForSimulator(self):
-        cmd_shell = '{0} {1} -derivedDataPath {2}'.format(self.build_method, self.build_params, self.output_folder)
-        print "buildArchiveForSimulator============= {0}".format(cmd_shell)
-        self.runShell(cmd_shell)
+    def _build_archive_for_simulator(self):
+        cmd_shell = '{0} {1} -derivedDataPath {2}'.format(
+            self._build_method, self._build_params, self._output_folder)
+        print("build archive for simulator ============= {}".format(cmd_shell))
+        self._run_shell(cmd_shell)
 
-    def archiveAppToZip(self):
-        app_path = os.path.join(self.output_folder, "Build", "Products", "{0}-iphonesimulator".format(self.configuration), "{0}.app".format(self._app_name))
+    def _archive_app_to_zip(self):
+        app_path = os.path.join(
+            self._output_folder,
+            "Build",
+            "Products",
+            "{0}-iphonesimulator".format(self._configuration),
+            "{0}.app".format(self._app_name)
+        )
         app_zip_filename = os.path.basename(app_path) + ".zip"
-        app_zip_path = os.path.join(self.output_folder, app_zip_filename)
+        app_zip_path = os.path.join(self._output_folder, app_zip_filename)
         cmd_shell = "zip -r {0} {1}".format(app_zip_path, app_path)
-        self.runShell(cmd_shell)
-        print "app_zip_path: %s" % app_zip_path
+        self._run_shell(cmd_shell)
+        print("app_zip_path: %s" % app_zip_path)
         return app_zip_path
 
     def build_app(self):
-        self.prepare()
-        self.buildClean()
-        self.buildArchiveForSimulator()
-        app_zip_path = self.archiveAppToZip()
+        """ build app file for iOS simulator
+        """
+        self._build_archive_for_simulator()
+        app_zip_path = self._archive_app_to_zip()
         return app_zip_path

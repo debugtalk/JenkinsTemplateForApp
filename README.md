@@ -25,7 +25,7 @@ $ python ${WORKSPACE}/build_scripts/build.py \
     --workspace ${WORKSPACE}/Store.xcworkspace \
     --sdk ${SDK}
     --configuration ${CONFIGURATION} \
-    --output ${WORKSPACE}/${OUTPUT_FOLDER}
+    --output_folder ${WORKSPACE}/${OUTPUT_FOLDER}
 ```
 
 需要特别说明的是，若要构建生成可在移动设备中运行的`.ipa`文件，则要将`${SDK}`设置为`iphoneos`；若要构建生成可在模拟器中运行的`.app`文件，则要将`${SDK}`设置为`iphonesimulator`。
